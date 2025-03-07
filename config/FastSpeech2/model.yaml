@@ -1,0 +1,36 @@
+model : "Fastspeech2",
+
+Encoder:
+  layers : 4,
+  n_heads : 2,
+  hidden : 256,
+  conv_filter : 1024,
+  conv_kernel : [9,1],
+  dropout : 0.2,
+
+Decoder:
+  layers : 4,
+  n_heads : 2
+  hidden : 256,
+  conv_filter: 1024,
+  conv_kernel: [9, 1],
+  dropout: 0.2
+
+variance_predictor:
+  filter_size: 256
+  kernel_size: 3
+  dropout: 0.5
+
+variance_embedding:
+  pitch_quantization: "linear" # support 'linear' or 'log', 'log' is allowed only if the pitch values are not normalized during preprocessing
+  energy_quantization: "linear" # support 'linear' or 'log', 'log' is allowed only if the energy values are not normalized during preprocessing
+  n_bins: 256
+
+multi_speaker: False
+
+max_seq_len: 10000
+
+vocoder:
+  model: "HiFi-GAN" # support 'HiFi-GAN', 'MelGAN'
+  speaker: "LJSpeech" # support  'LJSpeech', 'universal'
+

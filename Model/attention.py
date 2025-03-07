@@ -1,8 +1,34 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 import numpy as np
 
 from utils.utils import get_mask
+
+PAD = 0
+UNK = 1
+BOS = 2
+EOS = 3
+PAD_WORD = "<black>"
+UNK_WORD = "<unk>"
+BOS_WORD = "<s>"
+EOS_WORD = "</s>"
+
+def get_sinusoid_encoder_table(n_position, d_hid, padding_idx = None):
+    def cal_angle(position, hid_idx):
+        return position/np.power(10000, 2*(hid_idx//2)/d_hid)
+    def get_posi_angle_vec(position):
+        return [cal_angle(position,hid_j) for hid_j in range(d_hid)]
+
+    sinusoid_table = np.array(
+        [get_posi_angle_vec(pos_i) for pos_i in range(n_position)]
+    )
+    sinusoid_table[:,0::2] = np.sin(sinusoid_table[:,0::2])
+    sinusoid_table[:,1::2] = np.cos(sinusoid_table[:,1::2])
+
+    if padding_idx is not None:
+        sinusoid_table = [padding_idx] = 0.0
+    return torch.FloatTensor(sinusoid_table)
 
 class ScaledDotAttention(nn.Module):
     def __init__(self, temperature = 1.0):
@@ -28,6 +54,32 @@ class ScaledDotAttention(nn.Module):
 
         return output, atten
 
+
+class PositionwiseFeedForward(nn.Module):
+    def __init__(self, d_in, d_hid, kernel_size, dropout=0.1):
+        super(PositionwiseFeedForward, self).__init__()
+        self.w_1 = nn.Conv1d(d_in,
+                             d_hid,
+                             kernel_size=kernel_size[0],
+                             padding=(kernel_size[0] - 1) // 2,
+                             )
+        self.w_2 = nn.Conv1d(d_hid,
+                             d_in,
+                             kernel_size=kernel_size[1],
+                             padding=(kernel_size[1] - 1) // 2,
+                             )
+        self.layer_norm = nn.LayerNorm(d_in)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        residual = x
+        output = x.transpose(1, 2)
+        output = self.w_2(F.relu(self.w_1(output)))
+        output = output.transpose(1, 2)
+        output = self.dropout(output)
+        output = self.layer_norm(output + residual)
+
+        return output
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, q_dim, k_dim, v_dim, n_head, hidden_dim, dropout = 0.4, temperature = 1.0):
@@ -82,43 +134,64 @@ class MultiHeadAttention(nn.Module):
         return output,atten
 
 class BidirectionalAttention(nn.Module):
-    def __init__(self, key1_dim, key2_dim, value1_dim, value2_dim, hidden_dim, temperature = 1.0):
+    def __init__(self, key1_dim, key2_dim, hidden_dim, temperature = 1.0):
         super(BidirectionalAttention, self).__init__()
         self.k1_dim = key1_dim
         self.k2_dim = key2_dim
-        self.v1_dim = value1_dim
-        self.v2_dim = value2_dim
         self.hidden_dim = hidden_dim
         self.temperature = temperature
 
         self.k1_linear = nn.Linear(self.k1_dim, hidden_dim)
         self.k2_linear = nn.Linear(self.k2_dim, hidden_dim)
-        self.v1_linear = nn.Linear(self.v1_dim, hidden_dim)
-        self.v2_linear = nn.Linear(self.v2_dim, hidden_dim)
+        self.v1_linear = nn.Linear(self.k2_dim, hidden_dim)
+        self.v2_linear = nn.Linear(self.k1_dim, hidden_dim)
 
 
-    def forward(self, k1, k2, v1, v2, k1_length, k2_length, v1_length, v2_length):
+    def forward(self, k1, k2, k1_length, k2_length):
         """
-        :param k1: b, l, c
-        :param k2: b, l, c
-        :param v1: b, l, c
-        :param v2: b, l, c
+        :param k1: b, tl, c
+        :param k2: b, al, c
+        :param v1: b, tl, c
+        :param v2: b, al, c
         :param k1_length: b
         :param k2_length: b
         :param v1_length: b
         :param v2_length: b
         :return:
+            output1: b, tl, c
+            output2 : b, al, c
         """
 
-        mask_k1 = get_mask(k1_length).unsqueeze(-1).to(k1.device) # b, l, 1
-        mask_k2 = get_mask(k2_length).unsqueeze(-1).to(k1.device) # b, l, 1
-        mask_v1 = get_mask(v1_length).unsqueeze(-1).to(k1.device) # b, l, 1
-        mask_v2 = get_mask(v2_length).unsqueeze(-1).to(k1.device) # b, l, 1
+        mask_k1 = get_mask(k1_length).unsqueeze(-1).to(k1.device) # b, tl, 1
+        mask_k2 = get_mask(k2_length).unsqueeze(-1).to(k1.device) # b, al, 1
+        mask_v1 = get_mask(k2_length).unsqueeze(-1).to(k1.device) # b, tl, 1
+        mask_v2 = get_mask(k1_length).unsqueeze(-1).to(k1.device) # b, al, 1
 
         k1 = self.k1_linear(k1).masked_fill(mask_k1, 0)
         k2 = self.k2_linear(k2).masked_fill(mask_k2, 0)
-        v1 = self.v1_linear(v1).masked_fill(mask_v1, 0)
-        v2 = self.v2_linear(v2).masked_fill(mask_v2, 0)
+        v1 = self.v1_linear(k2).masked_fill(mask_v1, 0)
+        v2 = self.v2_linear(k1).masked_fill(mask_v2, 0)
+
+        atten = torch.bmm(k1, k2.transpose(-1, -2)) # b, tl, al
+
+        atten_mask1 = mask_k1 * mask_k2.transpose(-1,-2)
+        atten_mask2 = mask_k2 * mask_k1.transpose(-1,-2)
+
+        atten1 = atten.masked_fill(atten_mask1, -np.inf)
+        atten2 = atten.transpose(-1,-2).masked_fill(atten_mask2, -np.inf)
+
+        atten1 = nn.functional.softmax(atten1, dim = -1) # b, tl, al
+        atten2 = nn.functional.softmax(atten2, dim = -1) # b, al, tl
+
+        output1 = torch.bmm(v2, atten1.transpose(-1,-2)) # b, al, hidden
+        output2 = torch.bmm(v1, atten2.transpose(-1,-2)) # b, tl, hidden
+
+        return output1, output2
+
+
+
+
+
 
 
 
