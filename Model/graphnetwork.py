@@ -28,12 +28,11 @@ class Auxilary_Classifier(nn.Module):
 
 
 class Audio_encoder(nn.Module):
-    def __init__(self,n_mels, hidden_dim, conv_kernel, conv_filter, n_layers, dropout ,level = "local"):
+    def __init__(self,n_mels, hidden_dim, conv_kernel, n_layers, dropout ,level = "local"):
         super(Audio_encoder, self).__init__()
         self.n_mels = n_mels
         self.hidden_dim = hidden_dim
         self.conv_kernel = conv_kernel
-        self.conv_filter = conv_filter
         self.n_layers = n_layers
         self.dropout = dropout
         self.level = level
@@ -102,14 +101,26 @@ class Audio_encoder(nn.Module):
         return output
 
 class TA_Encoder(nn.Module):
-    def __init__(self, n_mels, text_dim, hidden_dim, n_heads, n_layers, level = "local"):
+    def __init__(self, preprocess_config, model_config, level = "local"):
         super(TA_Encoder, self).__init__()
-        self.n_mels = n_mels
-        self.text_dim = text_dim
-        self.hidden_dim = hidden_dim
-        self.n_heads = n_heads
-        self.n_layers = n_layers
+        self.n_mels = preprocess_config["mel"]["n_mel_channels"]
+        self.text_dim = model_config["WiSeGCN"]["TA_Encoder"]["text_dim"]
+        self.hidden_dim = model_config["WiSeGCN"]["TA_Encoder"]["hidden"]
+        self.conv_kernel = model_config["WiSeGCN"]["TA_Encoder"]["conv_kernel"]
+        self.n_heads = model_config["WiSeGCN"]["TA_Encoder"]["n_heads"]
+        self.n_layers = model_config["WiSeGCN"]["TA_Encoder"]["n_layers"]
+        self.n_speaker = model_config["WiSeGCN"]["Auxilary_Task"]["speakers"]
+        self.n_emotion = model_config["WiSeGCN"]["Auxilary_Task"]["emotion"]
+        self.n_act = model_config["WiSeGCN"]["Auxilary_Task"]["act"]
+
+
         self.level = level
+
+        self.text_linear = nn.Linear(self.text_dim)
+        self.audio_encoder = Audio_encoder(self.n_mels, self.hidden_dim, self.conv_kernel,  self.n_layers, self.dropout ,level =level)
+        self.audio_aux_speaker= Auxilary_Classifier(self.hidden_dim, self.n_speaker, level = level)
+        self.audio_aux_emotion = Auxilary_Classifier(self.hidden_dim, self.n_emotion, level = level)
+        self.audio_aux_act = Auxilary_Classifier(self.hidden_dim, self.n_act, level = level)
 
 
 
