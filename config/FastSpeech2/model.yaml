@@ -26,6 +26,22 @@ variance_embedding:
   energy_quantization: "linear" # support 'linear' or 'log', 'log' is allowed only if the energy values are not normalized during preprocessing
   n_bins: 256
 
+WiSEGCN:
+  Audio_Encoder:
+    hidden : 256,
+    conv_kernel : 3,
+    n_layers : 4,
+    dropout : 0.3
+  Auxilary_Task :
+    speakers : 2
+    emotion : 4
+    act : 4
+  TA_Encoder:
+    hidden : 256,
+    n_heads : 2,
+    n_layers : 4
+
+
 multi_speaker: False
 
 max_seq_len: 10000
