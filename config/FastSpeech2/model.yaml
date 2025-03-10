@@ -34,10 +34,12 @@ WiSeGCN:
   TA_Encoder:
     text_dim : 768
     hidden : 256
-    conv_kernel : 3
-    n_heads : 2
-    n_layers : 4
-    dropout : 0.3
+    n_layers : 3
+    Audio_Encoder:
+      conv_kernel : 3
+      n_heads : 2
+      n_layers : 4
+      dropout : 0.3
 
 
 multi_speaker: False
