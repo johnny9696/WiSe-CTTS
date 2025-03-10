@@ -159,3 +159,34 @@ class Global_Feature_Extractor(nn.Module):
         output, attn = self.attention(fusion_vector, fusion_vector, fusion_vector, slf_attn_mask)
         return output, attn
 
+class Local_Feature_Extractor(nn.Module):
+    def __init__(self):
+        super(Local_Feature_Extractor,self).__init__()
+
+
+        self.text_linear = nn.Linear()
+        self.audio_encoder = Audio_encoder()
+
+        self.bi_attention = nn.ModuleList()
+        self.T_PWB = nn.ModuleList()
+        self.A_PWB = nn.ModuleList()
+
+        self.alpha_mlp = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, 1),
+            nn.Sigmoid()
+        )
+
+    def t_a_align(self, audio, alignment):
+
+    def forward(self, text, audio, history_mask, text_mask, audio_mask, text_audio_align):
+        """
+        :param text: b, h, l, c
+        :param audio: b, h, l, n_mel
+        :param history_mask: b
+        :param text_mask: b, h, l
+        :param audio_mask: b, h, l
+        :param text_audio_align : b, h, l
+        :return:
+        """
