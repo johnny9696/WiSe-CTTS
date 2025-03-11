@@ -147,30 +147,23 @@ class BidirectionalAttention(nn.Module):
         self.v2_linear = nn.Linear(self.k1_dim, hidden_dim)
 
 
-    def forward(self, k1, k2, k1_length, k2_length):
+    def forward(self, k1, k2, mask_k1, mask_k2):
         """
         :param k1: b, tl, c
         :param k2: b, al, c
         :param v1: b, tl, c
         :param v2: b, al, c
-        :param k1_length: b
-        :param k2_length: b
-        :param v1_length: b
-        :param v2_length: b
+        :param mask_k1: b, l
+        :param mask_k2: b, l
         :return:
             output1: b, tl, c
             output2 : b, al, c
         """
 
-        mask_k1 = get_mask(k1_length).unsqueeze(-1).to(k1.device) # b, tl, 1
-        mask_k2 = get_mask(k2_length).unsqueeze(-1).to(k1.device) # b, al, 1
-        mask_v1 = get_mask(k2_length).unsqueeze(-1).to(k1.device) # b, tl, 1
-        mask_v2 = get_mask(k1_length).unsqueeze(-1).to(k1.device) # b, al, 1
-
         k1 = self.k1_linear(k1).masked_fill(mask_k1, 0)
         k2 = self.k2_linear(k2).masked_fill(mask_k2, 0)
-        v1 = self.v1_linear(k2).masked_fill(mask_v1, 0)
-        v2 = self.v2_linear(k1).masked_fill(mask_v2, 0)
+        v1 = self.v1_linear(k2).masked_fill(mask_k2, 0)
+        v2 = self.v2_linear(k1).masked_fill(mask_k1, 0)
 
         atten = torch.bmm(k1, k2.transpose(-1, -2)) # b, tl, al
 
