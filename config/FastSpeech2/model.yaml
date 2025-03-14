@@ -26,7 +26,20 @@ variance_embedding:
   energy_quantization: "linear" # support 'linear' or 'log', 'log' is allowed only if the energy values are not normalized during preprocessing
   n_bins: 256
 
-WiSeGCN:
+VoiceAgent:
+  text_dim : 768
+  hidden_dim : 256
+  bidirectional : True
+  n_layers : 3
+  history_length : 5
+  dropout : 0.3
+
+GCN:
+  history_length : 5
+  text_dim : 768
+  hidden_dim : 256
+
+WiSeGTN:
   Auxilary_Task :
     speakers : 2
     emotion : 4
@@ -40,9 +53,12 @@ WiSeGCN:
       n_heads : 2
       n_layers : 4
       dropout : 0.3
-
+  history_length : 9
+  window_size : 5
+  n_heads : 2
 
 multi_speaker: False
+speakers : 2
 
 max_seq_len: 10000
 
