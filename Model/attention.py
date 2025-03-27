@@ -151,8 +151,6 @@ class BidirectionalAttention(nn.Module):
         """
         :param k1: b, tl, c
         :param k2: b, al, c
-        :param v1: b, tl, c
-        :param v2: b, al, c
         :param mask_k1: b, l
         :param mask_k2: b, l
         :return:

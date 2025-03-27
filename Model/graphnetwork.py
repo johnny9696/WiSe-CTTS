@@ -163,6 +163,3 @@ class WiSeGTN(nn.Module):
         h_context = self.ReLU2(self.wise(h_context, dialogue_mask, n_attn_map, indx)) + h_context
 
         return h_context
-
-
-

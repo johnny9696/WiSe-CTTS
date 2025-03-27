@@ -14,6 +14,7 @@ optimizer:
   anneal_steps: [300000, 400000, 500000]
   anneal_rate: 0.3
 step:
+  total_epochs : 1000
   total_step: 900000
   log_step: 100
   synth_step: 100
