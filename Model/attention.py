@@ -100,6 +100,8 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.out_linear = nn.Linear(hidden_dim*n_head, hidden_dim)
 
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+
     def forward(self, q, k, v, mask):
         """
         :param q: b, l, c
@@ -127,6 +129,9 @@ class MultiHeadAttention(nn.Module):
 
         mask = mask.repeat(self.n_head, 1, 1)
         output, atten = self.attention(q, k, v, mask)
+
+        output = output.view(self.n_head, b, ql, self.hidden_dim)
+        output = output.permute(1, 2, 0, 3).contiguous().view(b, ql, -1)
 
         output = self.dropout(self.out_linear(output))
         output = self.layer_norm(output+residual)

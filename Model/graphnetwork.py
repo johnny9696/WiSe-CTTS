@@ -14,8 +14,8 @@ from torch_geometric.typing import Adj, OptTensor
 from torch_geometric.nn.conv.rgcn_conv import RGCNConv, masked_edge_index
 from torch_geometric.nn import GraphConv
 
-from dialogue_modules import Audio_encoder,Auxilary_Classifier, Global_Feature_Extractor, Local_Feature_Extractor
-from attention import MultiHeadAttention, BidirectionalAttention
+from .dialogue_modules import Audio_encoder,Auxilary_Classifier, Global_Feature_Extractor, Local_Feature_Extractor
+from .attention import MultiHeadAttention, BidirectionalAttention
 
 #code from https://github.com/thuhcsi/mm2022-conversational-tts
 def masked_edge_weight(edge_weight, edge_mask):

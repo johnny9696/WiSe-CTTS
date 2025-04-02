@@ -1,6 +1,21 @@
+import math
 import torch
 from torch import nn
-from glow import WaveGlowLoss
+
+def WaveGlowLoss(z, log_det, mask):
+    """
+       z, logdet: [batch_size, dim, max_time]
+       mask -- [batch_size, 1, max_time]
+    """
+    logs = torch.zeros_like(z * mask)
+    l = torch.sum(logs) + 0.5 * \
+        torch.sum(torch.exp(-2 * logs) * (z ** 2))
+    l = l - torch.sum(log_det)
+    l = l / \
+        torch.sum(torch.ones_like(z * mask))
+    l = l + 0.5 * math.log(2 * math.pi)
+    return l
+
 
 class FastSpeech2Loss(nn.Module):
     def __init__(self, preprocess_config, model_config):
@@ -18,7 +33,7 @@ class FastSpeech2Loss(nn.Module):
             pitch_targets,
             energy_targets,
             duration_targets,
-        ) = inputs[6:]
+        ) = inputs[5:]
         (
             mel_predictions,
             postnet_mel_predictions,
@@ -72,7 +87,7 @@ class FastSpeech2Loss(nn.Module):
         energy_loss = self.mse_loss(energy_predictions,energy_targets)
         duration_loss = self.mse_loss(log_duration_predictions, log_duration_targets)
 
-        total_loss = mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss
+        total_loss = (mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss)
 
         return (
             total_loss,
@@ -83,7 +98,6 @@ class FastSpeech2Loss(nn.Module):
             duration_loss
         )
 
-#loss function input output 수정하기
 class FastSpeech2_GlowLoss(nn.Module):
     def __init__(self, preprocess_config, model_config):
         super(FastSpeech2_GlowLoss, self).__init__()
@@ -91,9 +105,8 @@ class FastSpeech2_GlowLoss(nn.Module):
         self.energy_feature_level = preprocess_config["preprocessing"]["energy"]["feature"]
         self.mse_loss = nn.MSELoss()
         self.mae_loss = nn.L1Loss()
-        self.postnet_loss = WaveGlowLoss()
 
-    #input output 수정 필요
+
     def forward(self, inputs, predictions):
         (
             mel_targets,
@@ -102,7 +115,7 @@ class FastSpeech2_GlowLoss(nn.Module):
             pitch_targets,
             energy_targets,
             duration_targets,
-        ) = inputs[6:]
+        ) = inputs[5:10]
         (
             mel_predictions,
             postnet_mel_predictions,
@@ -114,6 +127,7 @@ class FastSpeech2_GlowLoss(nn.Module):
             mel_masks,
             _,
             _,
+            log_det
         ) = predictions
 
         src_masks = ~src_masks
@@ -127,7 +141,6 @@ class FastSpeech2_GlowLoss(nn.Module):
         pitch_targets.requires_grad = False
         energy_targets.requires_grad = False
         mel_targets.requires_grad = False
-
         if self.pitch_feature_level == "phoneme_level":
             pitch_predictions = pitch_predictions.masked_select(src_masks)
             pitch_targets = pitch_targets.masked_select(src_masks)
@@ -146,11 +159,12 @@ class FastSpeech2_GlowLoss(nn.Module):
         log_duration_targets = log_duration_targets.masked_select(src_masks)
 
         mel_predictions = mel_predictions.masked_select(mel_masks.unsqueeze(-1))
-        postnet_mel_predictions = postnet_mel_predictions.masked_select(mel_masks.unsqueeze(-1))
+        #postnet_mel_predictions = postnet_mel_predictions.masked_select(mel_masks.unsqueeze(-1))
+        #log_det = log_det.masked_select(mel_masks.unsqueeze(-1))
         mel_targets = mel_targets.masked_select(mel_masks.unsqueeze(-1))
 
         mel_loss = self.mae_loss(mel_predictions, mel_targets)
-        postnet_mel_loss = self.mae_loss(postnet_mel_predictions, mel_targets)
+        postnet_mel_loss = WaveGlowLoss(postnet_mel_predictions, log_det, mel_masks)
 
         pitch_loss = self.mse_loss(pitch_predictions, pitch_targets)
         energy_loss = self.mse_loss(energy_predictions,energy_targets)

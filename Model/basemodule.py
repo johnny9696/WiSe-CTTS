@@ -9,13 +9,12 @@ import numpy as np
 
 
 from text.symbols import symbols
+from .attention import get_sinusoid_encoder_table, MultiHeadAttention, PositionwiseFeedForward
+from .attention import PAD,UNK, BOS, EOS, PAD_WORD, UNK_WORD, BOS_WORD, EOS_WORD
 from utils.utils import get_mask, pad
-from attention import get_sinusoid_encoder_table, MultiHeadAttention, PositionwiseFeedForward
-from attention import PAD,UNK, BOS, EOS, PAD_WORD, UNK_WORD, BOS_WORD, EOS_WORD
 
 
 #FastSpeech 2 Modules
-
 class Conv(nn.Module):
     def __init__(self,
                  in_channels,
@@ -84,8 +83,8 @@ class FFTBlock(nn.Module):
         enc_output, enc_slf_atten = self.slf_attn(
             enc_input, enc_input, enc_input, slf_attn_mask
         )
-        enc_output = enc_output.masked_fill(mask.unqueeze(-1),0)
-        enc_output = self.pos_ffn(enc_output).masked_fill(mask.unqueeze(-1),0)
+        enc_output = enc_output.masked_fill(mask.unsqueeze(-1), 0)
+        enc_output = self.pos_ffn(enc_output).masked_fill(mask.unsqueeze(-1), 0)
 
         return enc_output, enc_slf_atten
 
@@ -97,7 +96,7 @@ class Encoder(nn.Module):
         d_word_vec = config["Encoder"]["hidden"]
         n_head = config["Encoder"]["n_heads"]
         n_layers = config["Encoder"]["layers"]
-        d_k = d_v = config["Encoder"]["hidden"]//config["Encoder"]["n_heads"]
+        d_k = d_v = config["Encoder"]["hidden"]
         d_model = config["Encoder"]["hidden"]
         d_inner = config["Encoder"]["conv_filter"]
         kernel_size = config["Encoder"]["conv_kernel"]
@@ -134,7 +133,6 @@ class Encoder(nn.Module):
         slf_attn_mask = mask.unsqueeze(1).expand(-1,max_len, -1) # b, l, l
 
         enc_output = self.src_word_emb(src_seq) + self.position_enc[:,:max_len,:].expand(batch_size, -1,-1)
-
         for enc_layer in self.layer_stack:
             enc_output, enc_slf_attn = enc_layer(enc_output, mask, slf_attn_mask)
             if return_attns:
@@ -155,7 +153,7 @@ class Decoder(nn.Module):
         d_model = config["Decoder"]["hidden"]
         n_layers = config["Decoder"]["layers"]
         n_heads = config["Decoder"]["n_heads"]
-        d_k = d_v = d_model//n_heads
+        d_k = d_v = d_model
         d_inner = config["Decoder"]["conv_filter"]
         kernel_size = config["Decoder"]["conv_kernel"]
         dropout = config["Decoder"]["dropout"]
@@ -180,7 +178,7 @@ class Decoder(nn.Module):
         dec_slf_attn_list = []
         batch_size, max_len = src_seq.shape[0], src_seq.shape[1]
 
-        slf_attn_mask = mask.unsqueeze(0).expand(-1, max_len, -1) #b, l, l
+        slf_attn_mask = mask.unsqueeze(1).expand(-1, max_len, -1) #b, l, l
         dec_output = src_seq + self.position_enc[:,:max_len,:].expand(batch_size, -1, -1)
 
         for dec_layer in self.layer_stack:
@@ -206,7 +204,7 @@ class VariancePredictor(nn.Module):
         self.conv_layers = nn.Sequential(
             OrderedDict(
                 [
-                    ("conv1d_1", Conv(self.input_size, self.filter_size, kernel_size=self.kernel_size, padding=(self.kernel-1)//2)),
+                    ("conv1d_1", Conv(self.input_size, self.filter_size, kernel_size=self.kernel_size, padding=(self.kernel_size-1)//2)),
                     ("relu_1", nn.ReLU()),
                     ("layernorm_1", nn.LayerNorm(self.filter_size)),
                     ("dropout_1", nn.Dropout(self.dropout)),
@@ -222,7 +220,7 @@ class VariancePredictor(nn.Module):
         self.out_linear = nn.Linear(self.conv_output_size,1)
     def forward(self, enc_output, mask = None):
         out = self.conv_layers(enc_output)
-        out = self.out_linear(out)
+        out = self.out_linear(out).squeeze(-1)
         if mask is not None:
             out = out.masked_fill(mask, 0.0)
 
@@ -236,11 +234,15 @@ class LengthRegulator(nn.Module):
         output = list()
         mel_len = list()
         for batch, expand_target in zip(x, duration):
-            expaned = self.expand(batch, expand_target)
-            output.append(pad(output, max_len))
+            expanded = self.expand(batch, expand_target)
+            output.append(expanded)
+            mel_len.append(expanded.shape[0])
+
+        if max_len is not None:
+            output = pad(output, max_len)
         else:
             output = pad(output)
-        return output, torch.LongTensor(mel_len).to(x)
+        return output, torch.LongTensor(mel_len).to(x.device)
 
     def expand(self, batch, predicted):
         out = list()
@@ -327,11 +329,11 @@ class VarianceAdaptor(nn.Module):
     def get_energy_embedding(self, x, target, mask, control):
         prediction = self.energy_predictor(x, mask)
         if target is not None:
-            embedding = self.energy_embedding(torch.bucketize(target, self.pitch_bins))
+            embedding = self.energy_embedding(torch.bucketize(target, self.energy_bins))
         else:
             prediction = prediction * control
             embedding = self.energy_embedding(
-                torch.bucketize(prediction, self.pitch_bins)
+                torch.bucketize(prediction, self.energy_bins)
             )
         return prediction, embedding
     def forward(self,
@@ -367,16 +369,16 @@ class VarianceAdaptor(nn.Module):
                 min = 0,
             )
             x, mel_len = self.length_regulator(x, duration_rounded, max_len)
-            mel_mask = get_mask(mel_len)
+            mel_mask = get_mask(mel_len).to(x.device)
 
         if self.pitch_feature_level == "frame_level":
             pitch_prediction, pitch_embedding = self.get_pitch_embedding(
-                x, pitch_target, src_mask, p_control
+                x, pitch_target, mel_mask, p_control
             )
             x = x + pitch_embedding
         if self.energy_feature_level == "frame_level":
             energy_prediction, energy_embedding = self.get_energy_embedding(
-                x, energy_target, src_mask, e_control
+                x, energy_target, mel_mask, e_control
             )
             x = x + energy_embedding
 
@@ -398,9 +400,7 @@ class PostNet(nn.Module):
                  postnet_kernel_size = 5,
                  postnet_n_convolutions = 5):
         super(PostNet,self).__init__()
-
         self.convolutions = nn.ModuleList()
-
         self.convolutions.append(
             nn.Sequential(
                 ConvNorm(
